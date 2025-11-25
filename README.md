@@ -37,7 +37,7 @@ make -j`nproc`
 sudo make install
 ```
 
-This configuration outputs HDR gain maps in both XMP and ISO 21496-1 format to maximize compatability. Please refer to [building.md](https://github.com/google/libultrahdr/blob/main/docs/building.md) for further detail.
+This configuration outputs HDR gain maps in both XMP and ISO 21496-1 formats to maximize compatibility. Please refer to [building.md](https://github.com/google/libultrahdr/blob/main/docs/building.md) for further detail.
 
 ### Build Steps
 
@@ -61,5 +61,5 @@ The output executable is `build/hiframe`.
 Create a symbolic link of `logo` to working directory, and then run
 
 ```
-exif_framer <input.jpg> [output.jpg]
+./hiframe <input.jpg> [output.jpg]
 ```

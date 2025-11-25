@@ -353,7 +353,7 @@ string defaultOuput(const string &input) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        cout << "Usage: ./exif_framer <input.jpg> [output.jpg]" << endl;
+        cout << "Usage: " << argv[0] << " <input.jpg> [output.jpg]" << endl;
         return 1;
     }
     string inputPath = argv[1];
