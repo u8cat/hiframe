@@ -35,7 +35,9 @@
 #include <string_view>
 #include <fstream>
 #include <cmath>
+#include <algorithm>
 #include <format>
+#include <filesystem>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
@@ -53,10 +55,15 @@ using std::string, std::vector, std::format;
 using cv::Mat, cv::Point, cv::Scalar;
 using namespace std::string_literals;
 using namespace std::string_view_literals;
+namespace fs = std::filesystem;
 
-const int JPEG_QUALITY = 95;
-const auto BOLD_FONTS = {"/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"sv, "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"sv};
-const auto REGULAR_FONTS = {"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"sv, "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"sv};
+constexpr int JPEG_QUALITY = 95;
+constexpr auto BOLD_FONTS = {"/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"sv, "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"sv};
+constexpr auto REGULAR_FONTS = {"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"sv, "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"sv};
+
+// =========================================== //
+// Executable directory (including /)
+fs::path get_executable_directory();
 
 // =========================================== //
 // UTF-8 iterator
@@ -155,7 +162,6 @@ unicode_iterator utf8_end(const string &str) {
 class TextRenderer {
     FT_Library ft;
     vector<FT_Face> faces;
-    bool initialized = false;
 
 public:
     TextRenderer(std::initializer_list<std::string_view> fontPaths, int fontSize) {
@@ -172,49 +178,46 @@ public:
             FT_Set_Pixel_Sizes(face, 0, fontSize);
             faces.push_back(face);
         }
-        initialized = true;
     }
 
     ~TextRenderer() {
-        if(initialized) {
-            for (auto &face: faces)
-                FT_Done_Face(face);
-            FT_Done_FreeType(ft);
-        }
+        for (auto &face: faces)
+            FT_Done_Face(face);
+        FT_Done_FreeType(ft);
     }
 
     // Templated to handle CV_8U (SDR) and CV_32F (HDR)
     void putText(Mat& img, const string& text, Point pos, Scalar color) {
-        if (!initialized) return;
-
-        int pen_x = pos.x;
-        int pen_y = pos.y;
+        auto pen_x = pos.x;
+        auto pen_y = pos.y;
 
         for (auto it = utf8_begin(text); it != utf8_end(text); ++it) {
             // Try rendering the codepoint in all avaliable fonts
             for (auto &face : faces) {
                 if (FT_Get_Char_Index(face, *it) == 0 || FT_Load_Char(face, *it, FT_LOAD_RENDER)) continue;
                 FT_Bitmap& bitmap = face->glyph->bitmap;
-                int top = pen_y - face->glyph->bitmap_top;
-                int left = pen_x + face->glyph->bitmap_left;
+                auto top = pen_y - face->glyph->bitmap_top;
+                auto left = pen_x + face->glyph->bitmap_left;
 
                 for (int r = 0; r < bitmap.rows; r++) {
                     for (int c = 0; c < bitmap.width; c++) {
-                        int y = top + r;
-                        int x = left + c;
+                        auto y = top + r;
+                        auto x = left + c;
 
                         if (y < 0 || y >= img.rows || x < 0 || x >= img.cols) continue;
 
                         double alpha = bitmap.buffer[r * bitmap.width + c] / 255.0;
                         if (alpha > 0) {
                             // Handle Multi-channel generic
-                            int channels = img.channels();
+                            auto channels = img.channels();
                             if (img.depth() == CV_8U) {
                                 cv::Vec3b& pixel = img.at<cv::Vec3b>(y, x);
-                                for (int i = 0; i < 3; i++) pixel[i] = (uchar)(pixel[i] * (1.0 - alpha) + color[i] * alpha);
+                                for (int i = 0; i < 3; i++)
+                                    pixel[i] = (uchar)(pixel[i] * (1.0 - alpha) + color[i] * alpha);
                             } else if (img.depth() == CV_32F) {
                                 cv::Vec3f& pixel = img.at<cv::Vec3f>(y, x);
-                                for (int i = 0; i < 3; i++) pixel[i] = (float)(pixel[i] * (1.0 - alpha) + color[i] * alpha);
+                                for (int i = 0; i < 3; i++)
+                                    pixel[i] = (float)(pixel[i] * (1.0 - alpha) + color[i] * alpha);
                             }
                         }
                     }
@@ -226,7 +229,6 @@ public:
     }
 
     int getTextWidth(const string& text) {
-        if (!initialized) return 0;
         int width = 0;
         for (auto it = utf8_begin(text); it != utf8_end(text); ++it) {
             for (auto &face : faces) {
@@ -260,8 +262,13 @@ Metadata parseExif(const Exiv2::ExifData &exifData) {
         if (!exifData.empty()) {
             if (auto key = exifData.findKey(ExifKey("Exif.Image.Make")); key != exifData.end())
                 meta.make = key->toString();
-            if (auto key = exifData.findKey(ExifKey("Exif.Image.Model")); key != exifData.end())
+            if (auto key = exifData.findKey(ExifKey("Exif.Image.Model")); key != exifData.end()) {
                 meta.model = key->toString();
+                if (meta.make == "") {
+                    // If Make is none, try inferring it from Model
+                    meta.make = meta.model.substr(0,meta.model.find(" "));
+                }
+            }
             if (auto key = exifData.findKey(ExifKey("Exif.Photo.FNumber")); key != exifData.end()) {
                 auto val = key->toFloat();
                 auto s = format("{:.3f}", val);
@@ -285,6 +292,8 @@ Metadata parseExif(const Exiv2::ExifData &exifData) {
             }
             if (auto key = exifData.findKey(ExifKey("Exif.Photo.LensModel")); key != exifData.end())
                 meta.lens = key->toString();
+            else
+                meta.lens = "builtin lens";
             if (auto key = exifData.findKey(ExifKey("Exif.Photo.DateTimeOriginal")); key != exifData.end()) {
                 string d = key->toString();
                 d[4] = '-'; d[7] = '-'; d[10]='T';
@@ -304,9 +313,11 @@ Metadata parseExif(const Exiv2::ExifData &exifData) {
                 auto longitude_ref = exifData.findKey(ExifKey("Exif.GPSInfo.GPSLongitudeRef"))->toString();
                 meta.coordinate = format("{:.5f}{},{:.5f}{}", latitude, latitude_ref, longitude, longitude_ref);
                 if (auto key = exifData.findKey(ExifKey("Exif.GPSInfo.GPSAltitude")); key != exifData.end()) {
-                    auto height = key->toFloat();
-                    auto height_ref = exifData.findKey(ExifKey("Exif.GPSInfo.GPSAltitudeRef"))->toLong();
-                    meta.coordinate += format(",{:+.0f}m",height_ref==1? height:-height);
+                    int height = std::round(key->toFloat());
+                    if (auto key = exifData.findKey(ExifKey("Exif.GPSInfo.GPSAltitudeRef")); key != exifData.end()) {
+                        if (key->toLong() == 1) height = -height;
+                    }
+                    meta.coordinate += format(",{:+}m",height);
                 }
             }
         }
@@ -317,7 +328,7 @@ Metadata parseExif(const Exiv2::ExifData &exifData) {
 }
 
 Exiv2::ExifData getExif(const vector<char> &buf) {
-    Exiv2::Image::AutoPtr image = Exiv2::ImageFactory::open(reinterpret_cast<const Exiv2::byte*>(buf.data()), buf.size());
+    auto image = Exiv2::ImageFactory::open(reinterpret_cast<const Exiv2::byte*>(buf.data()), buf.size());
     image->readMetadata();
     return image->exifData();
 }
@@ -342,7 +353,7 @@ Mat wrapUhdrImage(uhdr_raw_image_t* img) {
 }
 
 string defaultOuput(const string &input) {
-    size_t i = input.length();
+    auto i = input.length();
     while(i && input[--i] != '.'); // find suffix
 
     if (i == 0) // no suffix
@@ -369,7 +380,7 @@ int main(int argc, char** argv) {
 
     // 2. Decode (Dual Pass if UltraHDR)
     Mat sdrMat, hdrMat; // sdrMat is BGR (8u), hdrMat is BGR (32f Linear)
-    bool hasHDR = false;
+    auto hasHDR = false;
 
     cout << "Decoding SDR plane..." << endl;
     sdrMat = cv::imdecode(buffer, cv::IMREAD_COLOR);
@@ -381,14 +392,13 @@ int main(int argc, char** argv) {
         cout << "Decoding HDR plane..." << endl;
 
         uhdr_codec_private_t* dec = uhdr_create_decoder();
-        uhdr_enable_gpu_acceleration(dec, 0);
         uhdr_compressed_image_t input_img = { buffer.data(), size, size, UHDR_CG_UNSPECIFIED, UHDR_CT_UNSPECIFIED, UHDR_CR_UNSPECIFIED };
         uhdr_dec_set_image(dec, &input_img);
         uhdr_dec_set_out_img_format(dec, UHDR_IMG_FMT_64bppRGBAHalfFloat);
         uhdr_dec_set_out_color_transfer(dec, UHDR_CT_LINEAR); // Essential for raw linear data
         uhdr_dec_probe(dec);
         if (uhdr_decode(dec).error_code == UHDR_CODEC_OK) {
-            Mat raw16 = wrapUhdrImage(uhdr_get_decoded_image(dec)); // CV_16FC4
+            auto raw16 = wrapUhdrImage(uhdr_get_decoded_image(dec)); // CV_16FC4
 
             // Convert 16F -> 32F first to avoid OpenCV cvtColor issues with 16-bit float
             Mat raw32;
@@ -432,12 +442,12 @@ int main(int argc, char** argv) {
     }
 
     // 4. Draw Metadata
-    Metadata meta = parseExif(exif);
+    auto meta = parseExif(exif);
     TextRenderer fontMain(BOLD_FONTS, 52);
     TextRenderer fontSub(REGULAR_FONTS, 40);
 
-    string params = meta.f_number + " ⋅ " + meta.shutter + " ⋅ " + meta.focal + " ⋅ " + meta.iso;
-    string subtext = meta.date;
+    auto maintext = format("{} ⋅ {} ⋅ {} ⋅ {}", meta.f_number, meta.shutter, meta.focal, meta.iso);
+    auto subtext = meta.date;
     if (meta.coordinate != "") {
         (subtext += " ⋅ ") += meta.coordinate;
     }
@@ -453,29 +463,49 @@ int main(int argc, char** argv) {
     Scalar hdrSub(0.133, 0.133, 0.133);
 
     // Draw SDR
-    fontMain.putText(sdrCanvas, params, Point(margin, footerY + 52), sdrText);
+    fontMain.putText(sdrCanvas, maintext, Point(margin, footerY + 52), sdrText);
     fontSub.putText(sdrCanvas, subtext, Point(margin, footerY + 122), sdrSub);
 
     // Draw HDR
     if (hasHDR) {
-        fontMain.putText(hdrCanvas, params, Point(margin, footerY + 52), hdrText);
+        fontMain.putText(hdrCanvas, maintext, Point(margin, footerY + 52), hdrText);
         fontSub.putText(hdrCanvas, subtext, Point(margin, footerY + 122), hdrSub);
     }
 
     // Logos
-    string logoPath = "logo/default.png";
-    string m = meta.make; transform(m.begin(), m.end(), m.begin(), ::tolower);
-    if (m.find("nikon") != string::npos) logoPath = "logo/nikon.png";
-    else if (m.find("google") != string::npos) logoPath = "logo/google.png";
+    auto logoPath = get_executable_directory();
+    bool hasMakeLogo = false;
+    if (fs::is_directory(logoPath / "../share/hiframe/logo")) logoPath /= "../share/hiframe/logo";
+    else if (is_directory(logoPath / "logo")) logoPath /= "logo";
+    else cerr << "Unable to find logo images" << endl;
+
+    auto m = meta.make; std::transform(m.begin(), m.end(), m.begin(), ::tolower);
+    for (const auto &logo : fs::directory_iterator(logoPath)) {
+        auto p = logo.path();
+        if (p.filename() == "default.png") continue;
+        auto stem = p.stem().string();
+        if (m.find(stem) != string::npos) {
+            logoPath = p;
+            hasMakeLogo = true;
+            break;
+        }
+    }
+    if (!hasMakeLogo) {
+        cerr << "Unknown manufacture: " << meta.make << "; fallback to default logo" << endl;
+        logoPath /= "default.png";
+    }
 
     Mat logo = cv::imread(logoPath, cv::IMREAD_UNCHANGED);
     if (!logo.empty()) {
         if (logo.channels() < 4) cvtColor(logo, logo, logo.channels()==1 ? cv::COLOR_GRAY2BGRA : cv::COLOR_BGR2BGRA);
 
-        int sz = 120;
-        resize(logo, logo, cv::Size(sz, sz), 0, 0, cv::INTER_AREA);
-        int lx = targetW - margin - sz;
-        int ly = footerY;
+        auto logosize = logo.size();
+        double logoresize_ratio = std::min(120.0/logosize.height, 240.0/logosize.width);
+        int hsize = std::round(logosize.width*logoresize_ratio);
+        int vsize = std::round(logosize.height*logoresize_ratio);
+        resize(logo, logo, cv::Size(hsize,vsize), 0, 0, cv::INTER_AREA);
+        int lx = targetW - margin - hsize;
+        int ly = footerY + (120-vsize)/2;
 
         // Blend SDR
         for(int r=0; r<logo.rows; r++) {
@@ -531,8 +561,7 @@ int main(int argc, char** argv) {
         Mat hdrLinear; cvtColor(hdrCanvas, hdrLinear, cv::COLOR_BGR2RGBA);
         Mat hdrHalf; hdrLinear.convertTo(hdrHalf, CV_16F);
 
-        uhdr_codec_private_t* enc = uhdr_create_encoder();
-        uhdr_enable_gpu_acceleration(enc, 0);
+        auto enc = uhdr_create_encoder();
 
         uhdr_raw_image_t sdr_img = { UHDR_IMG_FMT_32bppRGBA8888, UHDR_CG_BT_709, UHDR_CT_SRGB, UHDR_CR_FULL_RANGE,
                                      (unsigned)sdrRaw.cols, (unsigned)sdrRaw.rows };
@@ -564,7 +593,7 @@ int main(int argc, char** argv) {
         }
 
         if (checkUhdr(uhdr_encode(enc), "Encode")) {
-            uhdr_compressed_image_t* out = uhdr_get_encoded_stream(enc);
+            auto out = uhdr_get_encoded_stream(enc);
             ofstream f(outputPath, ios::binary);
             f.write((char*)out->data, out->data_sz);
             cout << "Saved UltraHDR: " << outputPath << endl;

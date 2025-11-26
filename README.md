@@ -32,7 +32,7 @@ git checkout 5ed39d67cd31d254e84ebf76b03d4b7bcc12e2f7
 And then build and install the library to `/usr/local/lib` by running
 ```bash
 mkdir build && cd build
-cmake .. -DUHDR_MAX_DIMENSION=16384 -DUHDR_WRITE_XMP=on -DUHDR_WRITE_ISO=on
+cmake .. -DUHDR_MAX_DIMENSION=16384 -DUHDR_WRITE_XMP=on -DUHDR_WRITE_ISO=on -DCMAKE_BUILD_TYPE=Release -DUHDR_ENABLE_GLES=on
 make -j`nproc`
 sudo make install
 ```
@@ -50,7 +50,7 @@ cd hiframe
 Compile:
 ```bash
 mkdir build && cd build
-cmake ..
+cmake .. -DCMAKE_BUILD_TYPE=Release
 make
 ```
 

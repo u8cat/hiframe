@@ -45,7 +45,7 @@ include_directories(
     ${ULTRAHDR_INCLUDE}
 )
 
-add_executable(hiframe frame.cxx)
+add_executable(hiframe frame.cxx filesystem.cxx)
 
 target_link_libraries(hiframe
     ${OpenCV_LIBS}
@@ -54,3 +54,10 @@ target_link_libraries(hiframe
     ${ULTRAHDR_LIB}
     jpeg
 )
+
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/logo"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}"
+    FILES_MATCHING PATTERN "*.png")
+
+install(TARGETS hiframe
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
