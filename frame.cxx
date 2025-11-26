@@ -268,6 +268,9 @@ Metadata parseExif(const Exiv2::ExifData &exifData) {
                     // If Make is none, try inferring it from Model
                     meta.make = meta.model.substr(0,meta.model.find(" "));
                 }
+                auto m = meta.model; std::transform(m.begin(), m.end(), m.begin(), ::tolower);
+                if (m.ends_with(" digital camera"))
+                    meta.model.resize(meta.model.length()-" digital camera"s.length());
             }
             if (auto key = exifData.findKey(ExifKey("Exif.Photo.FNumber")); key != exifData.end()) {
                 auto val = key->toFloat();
@@ -290,8 +293,12 @@ Metadata parseExif(const Exiv2::ExifData &exifData) {
                 if (s.back() == '.') s += '0';
                 meta.focal = s + "mm";
             }
-            if (auto key = exifData.findKey(ExifKey("Exif.Photo.LensModel")); key != exifData.end())
+            if (auto key = exifData.findKey(ExifKey("Exif.Photo.LensModel")); key != exifData.end()) {
                 meta.lens = key->toString();
+                if (meta.model != "" && meta.lens.starts_with(meta.model+" ")) {
+                    meta.lens = meta.lens.substr(meta.model.length()+1);
+                }
+            }
             else
                 meta.lens = "builtin lens";
             if (auto key = exifData.findKey(ExifKey("Exif.Photo.DateTimeOriginal")); key != exifData.end()) {
@@ -552,6 +559,17 @@ int main(int argc, char** argv) {
     // 5. Encode (Raw SDR + Raw HDR)
     cout << "Encoding..." << endl;
 
+    // update some EXIF data regarding the new image.
+    if (!exif.empty()) {
+        using namespace Exiv2;
+        if (auto key = exif.findKey(ExifKey("Exif.Image.Orientation")); key != exif.end())
+        exif.erase(key);
+        if (auto key = exif.findKey(ExifKey("Exif.Image.ImageWidth")); key != exif.end())
+            *key = targetW;
+        if (auto key = exif.findKey(ExifKey("Exif.Image.ImageLength")); key != exif.end())
+            *key = targetH;
+    }
+
     if (hasHDR) {
         // Prepare Raw Images
         // SDR: Convert BGR to RGBA
@@ -609,9 +627,8 @@ int main(int argc, char** argv) {
         f.close();
 
         try {
-            Exiv2::Image::AutoPtr src = Exiv2::ImageFactory::open(inputPath); src->readMetadata();
             Exiv2::Image::AutoPtr dst = Exiv2::ImageFactory::open(outputPath); dst->readMetadata();
-            dst->setExifData(src->exifData());
+            dst->setExifData(exif);
             dst->writeMetadata();
         } catch(...) {}
         cout << "Saved SDR: " << outputPath << endl;
