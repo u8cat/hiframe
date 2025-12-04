@@ -29,6 +29,8 @@
 #include <sys/stat.h>
 #include <filesystem>
 
+#include "filesystem.hxx"
+
 using std::string;
 namespace fs = std::filesystem;
 

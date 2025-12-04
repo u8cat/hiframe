@@ -35,22 +35,29 @@ find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(EXIV2 REQUIRED exiv2)
 
+find_package(Boost 1.74 REQUIRED COMPONENTS program_options)
+
 find_library(ULTRAHDR_LIB NAMES uhdr PATHS /usr/local/lib /opt/libultrahdr/lib /usr/lib)
 find_path(ULTRAHDR_INCLUDE NAMES ultrahdr_api.h PATHS /usr/local/include /opt/libultrahdr/include /usr/include)
 
 include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${OpenCV_INCLUDE_DIRS}
     ${FREETYPE_INCLUDE_DIRS}
     ${EXIV2_INCLUDE_DIRS}
+    ${Boost_INCLUDE_DIRS}
     ${ULTRAHDR_INCLUDE}
 )
 
-add_executable(hiframe frame.cxx filesystem.cxx)
+aux_source_directory(src HIFRAME_SRC)
+
+add_executable(hiframe ${HIFRAME_SRC})
 
 target_link_libraries(hiframe
     ${OpenCV_LIBS}
     ${FREETYPE_LIBRARIES}
     ${EXIV2_LIBRARIES}
+    ${Boost_LIBRARIES}
     ${ULTRAHDR_LIB}
     jpeg
 )
