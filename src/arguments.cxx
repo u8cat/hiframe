@@ -35,7 +35,7 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
     po::options_description op_basic("Options");
     op_basic.add_options()
         ("output,o", po::value<string>(&output_file), "output file")
-        ("output-pattern,O", po::value<string>(&output_pattern)->default_value("{}.frame"), "pattern of output files");
+        ("output-pattern,O", po::value<string>(&output_pattern)->default_value("framed/{}"), "pattern of output files");
 
     po::options_description op_image("Image Options");
     op_image.add_options()
@@ -79,21 +79,29 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
     if (!vm.contains("input"))
         return help(2);
     auto &inputs = vm["input"].as<vector<string>>();
-    switch (inputs.size())
-    {
-    case 0: return help(2);
-    case 1:
-        if(output_file != "")
-            args.files.emplace_back(inputs[0], output_file);
-        else
-            args.files.emplace_back(inputs[0], format_output(inputs[0], output_pattern));
-        break;
-    default:
-        if(output_file != "")
-            return help(2);
+    try {
+        switch (inputs.size())
+        {
+        case 0: return help(2);
+        case 1:
+            if(output_file != "")
+                args.files.emplace_back(inputs[0], output_file);
+            else
+                args.files.emplace_back(inputs[0], format_output(inputs[0], output_pattern));
+            break;
+        default:
+            if(output_file != "")
+                return help(2);
 
-        for (auto &input: vm["input"].as<vector<string>>())
-            args.files.emplace_back(input, format_output(input, output_pattern));
+            for (auto &input: vm["input"].as<vector<string>>())
+                args.files.emplace_back(input, format_output(input, output_pattern));
+        }
+    } catch (const std::format_error &e) {
+        // std::format rejects unbalanced braces, and accepts {} only once
+        clog << "Wrong --output-pattern \"" << output_pattern << "\": " << e.what() << "\n"
+                "The pattern is a format string whose only argument is the input file "
+                "name: {} inserts it once, {0} may be repeated.\n\n";
+        return help(2);
     }
 
     // parse image size

@@ -41,3 +41,15 @@ fs::path get_executable_directory() {
     fs::path p = s;
     return p.parent_path();
 }
+
+std::error_code create_parent_directory(const fs::path &file) {
+    auto dir = file.parent_path();
+    std::error_code ec;
+
+    // An empty parent is the working directory, which always exists.
+    if (dir.empty() || fs::is_directory(dir, ec))
+        return {};
+
+    fs::create_directories(dir, ec);
+    return ec;
+}

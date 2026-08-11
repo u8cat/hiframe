@@ -364,6 +364,12 @@ int main(int argc, char** argv) {
     auto args = std::get<CLIArgs>(args_op);
 
     for (auto &file: args.files) {
+        if (auto ec = create_parent_directory(file.second)) {
+            cerr << "Unable to create directory " << file.second.parent_path() << ": " << ec.message() << endl;
+            has_failure = true;
+            continue;
+        }
+
         if (!process(file.first, file.second, args.quality, args.width, args.height, args.fontsize, args.margin, args.verbose))
             has_failure = true;
     }
