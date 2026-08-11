@@ -9,13 +9,13 @@ constexpr int DEFAULT_FONT_SIZE = 52;
 
 struct CLIArgs
 {
-    int quality;   // JPEG quality, 95 by default
+    int quality;   // JPEG quality, 90 by default
     // List of files to process, each file is a pair of (input,output)
     std::vector<std::pair<std::filesystem::path,std::filesystem::path>> files;
     int width, height; // size of the output, default: 2160×2700
     int fontsize; // font size of the main text, default: 52; the sub text and
                   // every other length in the frame scale along with it
-    int margin; // width of the white frame, default: 80
+    int margin; // width of the white frame, default: 0
 
     bool verbose;
 };
