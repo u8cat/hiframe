@@ -82,7 +82,15 @@ Mat wrapUhdrImage(uhdr_raw_image_t* img) {
     return Mat();
 }
 
-bool process(const string &inputPath, const string &outputPath, int quality, int targetW, int targetH, int margin, bool verbose) {
+bool process(const string &inputPath, const string &outputPath, int quality, int targetW, int targetH, int fontSize, int margin, bool verbose) {
+    // Every length of the frame is a fixed proportion of the main font size.
+    // scaled(n) converts the length n, measured in pixels at the reference font
+    // size, to the length at the requested one; hence scaling the canvas and the
+    // font size by the same factor yields a visually identical frame.
+    auto scaled = [ratio = (double)fontSize / DEFAULT_FONT_SIZE](int length) {
+        return (int)std::lround(length * ratio);
+    };
+
     // 1. Read Input
     ifstream file(inputPath, ios::binary | ios::ate);
     if (!file.good()) { cerr << "File error: " << inputPath << endl; return -1; }
@@ -126,7 +134,7 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
     }
 
     // 3. Resize & Pad
-    int bottomPad = 300;
+    int bottomPad = scaled(300);
 
     auto layout = [&](const Mat& src, Mat& dst, Scalar padColor, int interp) {
         double scale = std::min((double)(targetW - margin*2) / src.cols, (double)(targetH - margin*2 - bottomPad) / src.rows);
@@ -153,15 +161,17 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
 
     // 4. Draw Metadata
     auto meta = parseExif(exif);
-    TextRenderer fontMain(BOLD_FONTS, 52);
-    TextRenderer fontSub(REGULAR_FONTS, 40);
+    TextRenderer fontMain(BOLD_FONTS, fontSize);
+    TextRenderer fontSub(REGULAR_FONTS, scaled(40));
 
     auto maintext = format("{} ⋅ {} ⋅ {} ⋅ {}", meta.aperture, meta.shutter, meta.focal, meta.iso);
     auto subtext = meta.date;
     if (meta.coordinate != "") {
         (subtext += " ⋅ ") += meta.coordinate;
     }
-    int footerY = targetH - bottomPad + 60;
+    int footerY = targetH - bottomPad + scaled(60);
+    int mainY = footerY + scaled(52); // baseline of the main text
+    int subY = footerY + scaled(122); // baseline of the sub text
 
     // SDR Colors
     Scalar sdrText(0,0,0);
@@ -173,13 +183,13 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
     Scalar hdrSub(0.133, 0.133, 0.133);
 
     // Draw SDR
-    fontMain.render(sdrCanvas, maintext, Point(margin, footerY + 52), sdrText);
-    fontSub.render(sdrCanvas, subtext, Point(margin, footerY + 122), sdrSub);
+    fontMain.render(sdrCanvas, maintext, Point(margin, mainY), sdrText);
+    fontSub.render(sdrCanvas, subtext, Point(margin, subY), sdrSub);
 
     // Draw HDR
     if (hasHDR) {
-        fontMain.render(hdrCanvas, maintext, Point(margin, footerY + 52), hdrText);
-        fontSub.render(hdrCanvas, subtext, Point(margin, footerY + 122), hdrSub);
+        fontMain.render(hdrCanvas, maintext, Point(margin, mainY), hdrText);
+        fontSub.render(hdrCanvas, subtext, Point(margin, subY), hdrSub);
     }
 
     // Logos
@@ -211,12 +221,13 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
         if (logo.channels() < 4) cvtColor(logo, logo, logo.channels()==1 ? cv::COLOR_GRAY2BGRA : cv::COLOR_BGR2BGRA);
 
         auto logosize = logo.size();
-        double logoresize_ratio = std::min(120.0/logosize.height, 240.0/logosize.width);
+        int logoH = scaled(120), logoW = scaled(240); // box the logo is fitted into
+        double logoresize_ratio = std::min((double)logoH/logosize.height, (double)logoW/logosize.width);
         int hsize = std::round(logosize.width*logoresize_ratio);
         int vsize = std::round(logosize.height*logoresize_ratio);
         resize(logo, logo, cv::Size(hsize,vsize), 0, 0, cv::INTER_AREA);
         int lx = targetW - margin - hsize;
-        int ly = footerY + (120-vsize)/2;
+        int ly = footerY + (logoH-vsize)/2;
 
         // Blend SDR
         for(int r=0; r<logo.rows; r++) {
@@ -248,15 +259,17 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
             }
         }
 
+        int gap = scaled(40); // gap between the logo and the text on its left
+
         string cam = meta.model;
         int w = fontMain.width(cam);
-        fontMain.render(sdrCanvas, cam, Point(lx - 40 - w, footerY + 52), sdrText);
-        if (hasHDR) fontMain.render(hdrCanvas, cam, Point(lx - 40 - w, footerY + 52), hdrText);
+        fontMain.render(sdrCanvas, cam, Point(lx - gap - w, mainY), sdrText);
+        if (hasHDR) fontMain.render(hdrCanvas, cam, Point(lx - gap - w, mainY), hdrText);
 
         if(!meta.lens.empty()) {
             int w2 = fontSub.width(meta.lens);
-            fontSub.render(sdrCanvas, meta.lens, Point(lx - 40 - w2, footerY + 122), sdrSub);
-            if(hasHDR) fontSub.render(hdrCanvas, meta.lens, Point(lx - 40 - w2, footerY + 122), hdrSub);
+            fontSub.render(sdrCanvas, meta.lens, Point(lx - gap - w2, subY), sdrSub);
+            if(hasHDR) fontSub.render(hdrCanvas, meta.lens, Point(lx - gap - w2, subY), hdrSub);
         }
     }
 
@@ -350,7 +363,7 @@ int main(int argc, char** argv) {
     auto args = std::get<CLIArgs>(args_op);
 
     for (auto &file: args.files) {
-        if (!process(file.first, file.second, args.quality, args.width, args.height, args.margin, args.verbose))
+        if (!process(file.first, file.second, args.quality, args.width, args.height, args.fontsize, args.margin, args.verbose))
             has_failure = true;
     }
 

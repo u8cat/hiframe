@@ -40,8 +40,9 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
     po::options_description op_image("Image Options");
     op_image.add_options()
         ("size,s", po::value<string>(&image_size)->default_value("2160x2700"), "size")
-        ("quality,q", po::value<int>(&args.quality)->default_value(95), "quality")
-        ("margin,m",po::value<int>(&args.margin)->default_value(80), "frame margin");
+        ("quality,q", po::value<int>(&args.quality)->default_value(90), "quality")
+        ("font-size,f", po::value<int>(&args.fontsize)->default_value(DEFAULT_FONT_SIZE), "font size")
+        ("margin,m",po::value<int>(&args.margin)->default_value(0), "frame margin");
 
     po::options_description op_other("Other Options");
     op_other.add_options()
@@ -111,6 +112,11 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
             clog << "Wrong --size format, expect: [0-9]+x[0-9]+\n\n";
             return help(2);
         }
+    }
+
+    if (args.fontsize <= 0) {
+        clog << "Wrong --font-size, expect a positive integer\n\n";
+        return help(2);
     }
 
     return args;
