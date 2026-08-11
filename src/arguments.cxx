@@ -39,9 +39,9 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
 
     po::options_description op_image("Image Options");
     op_image.add_options()
-        ("size,s", po::value<string>(&image_size)->default_value("2160x2700"), "size")
+        ("size,s", po::value<string>(&image_size)->default_value("1080x1350"), "size")
         ("quality,q", po::value<int>(&args.quality)->default_value(90), "quality")
-        ("font-size,f", po::value<int>(&args.fontsize)->default_value(DEFAULT_FONT_SIZE), "font size")
+        ("font-size,f", po::value<int>(&args.fontsize)->default_value(26), "font size")
         ("margin,m",po::value<int>(&args.margin)->default_value(0), "frame margin");
 
     po::options_description op_other("Other Options");
