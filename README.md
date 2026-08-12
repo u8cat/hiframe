@@ -57,10 +57,10 @@ make
 
 The output executable is `build/hiframe`.
 
+Run `sudo make install` to install it systemwide.
+
 ## Usage
 
-Create a symbolic link of `logo` to working directory, and then run
-
 ```
-./hiframe <input.jpg> [output.jpg]
+hiframe <input.jpg> -o <output.jpg>
 ```

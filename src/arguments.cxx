@@ -76,9 +76,9 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
     all_options.add(visible_options).add(hidden_options);
 
     auto help = [&](int x) {
-        clog << "Usage:" << argv[0] << "<input> -o <output>\n";
-        clog << "      " << argv[0] << "<input>\n";
-        clog << "      " << argv[0] << "<input>.. -O <output pattern>\n";
+        clog << "Usage: " << argv[0] << " <input> -o <output>\n";
+        clog << "       " << argv[0] << " <input>\n";
+        clog << "       " << argv[0] << " <input>.. -O <output pattern>\n";
         clog << visible_options << endl;
         return x;
     };
