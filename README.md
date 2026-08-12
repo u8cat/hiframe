@@ -15,7 +15,7 @@ This tool has been built and tested on Ubuntu 24.04.
 - [Exiv 2](https://exiv2.org/).
 - [Boost.ProgramOptions](https://www.boost.org/library/latest/program_options/) v1.74 or later.
 - libjpeg.
-- [libultrahdr](https://github.com/google/libultrahdr/tree/5ed39d67cd31d254e84ebf76b03d4b7bcc12e2f7).
+- [libultrahdr](https://github.com/google/libultrahdr/) v2.0.1.
 
 Ubuntu users can install most prerequisites by running
 ```bash
@@ -27,7 +27,7 @@ But libultrahdr must be built from source. To build libultrahdr, clone its repos
 ```bash
 git clone https://github.com/google/libultrahdr.git
 cd libultrahdr
-git checkout 5ed39d67cd31d254e84ebf76b03d4b7bcc12e2f7
+git checkout v2.0.1
 ```
 
 And then build and install the library to `/usr/local/lib` by running
