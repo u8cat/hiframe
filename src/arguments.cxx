@@ -1,8 +1,10 @@
 #include <string>
 #include <iostream>
 #include <cstdlib>
+#include <cctype>
 #include <format>
 #include <algorithm>
+#include <stdexcept>
 
 #include <boost/program_options.hpp>
 
@@ -12,6 +14,19 @@ using std::string, std::vector;
 using std::clog, std::endl;
 namespace po = boost::program_options;
 namespace fs = std::filesystem;
+
+// Parse one dimension of --size: a length, optionally suffixed with `~` to mark
+// it as an upper bound rather than an exact size. Throws if it is not a number.
+int parse_length(string length, bool &flexible) {
+    flexible = length.ends_with('~');
+    if (flexible) length.pop_back();
+
+    if (length.empty() || !std::all_of(length.begin(), length.end(),
+                                       [](unsigned char c) { return std::isdigit(c); }))
+        throw std::invalid_argument(length);
+
+    return std::stoi(length); // may still throw out_of_range
+}
 
 fs::path format_output(const fs::path &input, const string &pattern) {
     auto filename = input.filename();
@@ -39,7 +54,8 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
 
     po::options_description op_image("Image Options");
     op_image.add_options()
-        ("size,s", po::value<string>(&image_size)->default_value("1080x1350"), "size")
+        ("size,s", po::value<string>(&image_size)->default_value("1080x1350~"),
+                   "size; a dimension suffixed with ~ shrinks to the photo")
         ("quality,q", po::value<int>(&args.quality)->default_value(90), "quality")
         ("font-size,f", po::value<int>(&args.fontsize)->default_value(26), "font size")
         ("margin,m",po::value<int>(&args.margin)->default_value(0), "frame margin");
@@ -109,17 +125,32 @@ std::variant<CLIArgs,int> parse_arguments(int argc, char **argv) {
     {
         auto p = image_size.find('x');
         if (p == string::npos) {
-            clog << "Wrong --size format, expect: [0-9]+x[0-9]+\n\n";
+            clog << "Wrong --size format, expect: [0-9]+~?x[0-9]+~?\n\n";
             return help(2);
         }
 
+        bool flexible_width, flexible_height;
         try {
-            args.width = std::stoi(image_size.substr(0,p));
-            args.height = std::stoi(image_size.substr(p+1));
+            args.width = parse_length(image_size.substr(0,p), flexible_width);
+            args.height = parse_length(image_size.substr(p+1), flexible_height);
         } catch (...) {
-            clog << "Wrong --size format, expect: [0-9]+x[0-9]+\n\n";
+            clog << "Wrong --size format, expect: [0-9]+~?x[0-9]+~?\n\n";
             return help(2);
         }
+
+        if (args.width <= 0 || args.height <= 0) {
+            clog << "Wrong --size, expect positive integers\n\n";
+            return help(2);
+        }
+
+        if (flexible_width && flexible_height) {
+            clog << "Wrong --size, only one dimension may be followed by ~, "
+                    "as the other one fixes the scale of the photo\n\n";
+            return help(2);
+        }
+
+        args.shrink = flexible_width ? Shrink::Width :
+                      flexible_height ? Shrink::Height : Shrink::None;
     }
 
     if (args.fontsize <= 0) {

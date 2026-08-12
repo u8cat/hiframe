@@ -64,6 +64,18 @@ namespace fs = std::filesystem;
 constexpr auto BOLD_FONTS = {"/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf"sv, "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"sv};
 constexpr auto REGULAR_FONTS = {"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"sv, "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"sv};
 
+// The photo sits above a footer holding two lines of text on the left, and the
+// camera model, the lens and the manufacturer logo on the right. Every length
+// of the frame is derived from the ones below, given in pixels at the reference
+// font size DEFAULT_FONT_SIZE and converted to the requested one by scaled().
+constexpr int FOOTER_PADDING = 5;     // above the top of the first line
+constexpr int DEFAULT_FONT_SIZE = 52; // main text size
+constexpr int SUB_FONT_SIZE = 40;     //
+constexpr int LINE_SPACING = 70;      // between the baselines of the two lines
+constexpr int LOGO_HEIGHT = 120;      // the logo is fitted into this box, ...
+constexpr int LOGO_WIDTH = 240;
+constexpr int LOGO_SPACING = 40;      // ... this far from the text on its left
+
 bool checkUhdr(uhdr_error_info_t status, const string& msg) {
     if (status.error_code != UHDR_CODEC_OK) {
         cerr << "[UltraHDR] " << msg << " Failed: " << status.error_code;
@@ -83,7 +95,7 @@ Mat wrapUhdrImage(uhdr_raw_image_t* img) {
     return Mat();
 }
 
-bool process(const string &inputPath, const string &outputPath, int quality, int targetW, int targetH, int fontSize, int margin, bool verbose) {
+bool process(const string &inputPath, const string &outputPath, int quality, int targetW, int targetH, Shrink shrink, int fontSize, int margin, bool verbose) {
     // Every length of the frame is a fixed proportion of the main font size.
     // scaled(n) converts the length n, measured in pixels at the reference font
     // size, to the length at the requested one; hence scaling the canvas and the
@@ -135,19 +147,28 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
     }
 
     // 3. Resize & Pad
-    int bottomPad = scaled(300);
+    int footerHeight = scaled(FOOTER_PADDING + std::max(LINE_SPACING*2,LOGO_HEIGHT));
 
+    // Size of the photo once scaled to fit inside the requested frame.
+    double scale = std::min((double)(targetW - margin*2) / sdrMat.cols, (double)(targetH - margin*2 - footerHeight) / sdrMat.rows);
+    cv::Size photo(sdrMat.cols * scale, sdrMat.rows * scale);
+
+    // A dimension marked with `~` is only an upper bound: shrink the frame onto
+    // the photo, leaving no white space in that direction. The scale is already
+    // fixed by the other dimension, which may therefore still be padded.
+    if (shrink == Shrink::Width) targetW = photo.width + margin*2;
+    else if (shrink == Shrink::Height) targetH = photo.height + margin*2 + footerHeight;
+
+    // Both planes hold the same photo and have to line up, so they share its
+    // placement rather than each fitting itself into the frame.
     auto layout = [&](const Mat& src, Mat& dst, Scalar padColor, int interp) {
-        double scale = std::min((double)(targetW - margin*2) / src.cols, (double)(targetH - margin*2 - bottomPad) / src.rows);
-        int dw = src.cols * scale;
-        int dh = src.rows * scale;
-        int x = (targetW - dw) / 2;
-        int y = margin + (targetH - margin*2 - bottomPad - dh) / 2;
+        int x = (targetW - photo.width) / 2;
+        int y = margin + (targetH - margin*2 - footerHeight - photo.height) / 2;
 
         dst.setTo(padColor);
         Mat resized;
-        resize(src, resized, cv::Size(dw, dh), 0, 0, interp);
-        resized.copyTo(dst(cv::Rect(x, y, dw, dh)));
+        resize(src, resized, photo, 0, 0, interp);
+        resized.copyTo(dst(cv::Rect(x, y, photo.width, photo.height)));
     };
 
     Mat sdrCanvas(targetH, targetW, CV_8UC3);
@@ -163,16 +184,16 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
     // 4. Draw Metadata
     auto meta = parseExif(exif);
     TextRenderer fontMain(BOLD_FONTS, fontSize);
-    TextRenderer fontSub(REGULAR_FONTS, scaled(40));
+    TextRenderer fontSub(REGULAR_FONTS, scaled(SUB_FONT_SIZE));
 
     auto maintext = format("{} ⋅ {} ⋅ {} ⋅ {}", meta.aperture, meta.shutter, meta.focal, meta.iso);
     auto subtext = meta.date;
     if (meta.coordinate != "") {
         (subtext += " ⋅ ") += meta.coordinate;
     }
-    int footerY = targetH - bottomPad + scaled(60);
-    int mainY = footerY + scaled(52); // baseline of the main text
-    int subY = footerY + scaled(122); // baseline of the sub text
+    int footerY = targetH - footerHeight + scaled(FOOTER_PADDING); // top of the text
+    int mainY = footerY + fontSize;              // baseline of the main text
+    int subY = mainY + scaled(LINE_SPACING);     // baseline of the sub text
 
     // SDR Colors
     Scalar sdrText(0,0,0);
@@ -222,7 +243,7 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
         if (logo.channels() < 4) cvtColor(logo, logo, logo.channels()==1 ? cv::COLOR_GRAY2BGRA : cv::COLOR_BGR2BGRA);
 
         auto logosize = logo.size();
-        int logoH = scaled(120), logoW = scaled(240); // box the logo is fitted into
+        int logoH = scaled(LOGO_HEIGHT), logoW = scaled(LOGO_WIDTH); // box the logo is fitted into
         double logoresize_ratio = std::min((double)logoH/logosize.height, (double)logoW/logosize.width);
         int hsize = std::round(logosize.width*logoresize_ratio);
         int vsize = std::round(logosize.height*logoresize_ratio);
@@ -260,7 +281,7 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
             }
         }
 
-        int gap = scaled(40); // gap between the logo and the text on its left
+        int gap = scaled(LOGO_SPACING); // gap between the logo and the text on its left
 
         string cam = meta.model;
         int w = fontMain.width(cam);
@@ -370,7 +391,7 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        if (!process(file.first, file.second, args.quality, args.width, args.height, args.fontsize, args.margin, args.verbose))
+        if (!process(file.first, file.second, args.quality, args.width, args.height, args.shrink, args.fontsize, args.margin, args.verbose))
             has_failure = true;
     }
 
