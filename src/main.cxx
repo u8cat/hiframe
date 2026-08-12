@@ -76,6 +76,11 @@ constexpr int LOGO_HEIGHT = 120;      // the logo is fitted into this box, ...
 constexpr int LOGO_WIDTH = 240;
 constexpr int LOGO_SPACING = 40;      // ... this far from the text on its left
 
+// Luminance of SDR white, which the HDR capacity of a gain map is relative to,
+// and the range of the display peak brightness libultrahdr accepts.
+constexpr float SDR_WHITE_NITS = 203;
+constexpr float MIN_PEAK_NITS = 203, MAX_PEAK_NITS = 10000;
+
 bool checkUhdr(uhdr_error_info_t status, const string& msg) {
     if (status.error_code != UHDR_CODEC_OK) {
         cerr << "[UltraHDR] " << msg << " Failed: " << status.error_code;
@@ -115,6 +120,14 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
     // 2. Decode (Dual Pass if UltraHDR)
     Mat sdrMat, hdrMat; // sdrMat is BGR (8u), hdrMat is BGR (32f Linear)
     auto hasHDR = false;
+    // The pixels are passed through untouched, so the output must be tagged with
+    // the color space of the input; assuming sRGB would misrepresent the wider
+    // gamut of, say, a Display P3 photo. sRGB is the fallback of an untagged one.
+    auto colorGamut = UHDR_CG_BT_709;
+    // Gain map of the input, reproduced for the output, see below
+    uhdr_gainmap_metadata_t gainmap;
+    auto hasGainmap = false;
+    auto multiChannelGainmap = true; // what the encoder writes unless told otherwise
 
     if(verbose) clog << "Decoding SDR plane..." << endl;
     sdrMat = cv::imdecode(buffer, cv::IMREAD_COLOR);
@@ -131,8 +144,18 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
         uhdr_dec_set_out_img_format(dec, UHDR_IMG_FMT_64bppRGBAHalfFloat);
         uhdr_dec_set_out_color_transfer(dec, UHDR_CT_LINEAR); // Essential for raw linear data
         uhdr_dec_probe(dec);
+        if (auto meta = uhdr_dec_get_gainmap_metadata(dec)) { gainmap = *meta; hasGainmap = true; }
+        // A gain map with one channel per color brightens them separately, a
+        // single-channel one brightens them alike; the channel count of its
+        // (JPEG) rendition tells which of the two the input carries.
+        if (auto map = uhdr_dec_get_gainmap_image(dec)) {
+            Mat compressed(1, (int)map->data_sz, CV_8U, map->data);
+            multiChannelGainmap = imdecode(compressed, cv::IMREAD_UNCHANGED).channels() > 1;
+        }
         if (uhdr_decode(dec).error_code == UHDR_CODEC_OK) {
-            auto raw16 = wrapUhdrImage(uhdr_get_decoded_image(dec)); // CV_16FC4
+            auto decoded = uhdr_get_decoded_image(dec);
+            if (decoded->cg != UHDR_CG_UNSPECIFIED) colorGamut = decoded->cg;
+            auto raw16 = wrapUhdrImage(decoded); // CV_16FC4
 
             // Convert 16F -> 32F first to avoid OpenCV cvtColor issues with 16-bit float
             Mat raw32;
@@ -320,12 +343,12 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
 
         auto enc = uhdr_create_encoder();
 
-        uhdr_raw_image_t sdr_img = { UHDR_IMG_FMT_32bppRGBA8888, UHDR_CG_BT_709, UHDR_CT_SRGB, UHDR_CR_FULL_RANGE,
+        uhdr_raw_image_t sdr_img = { UHDR_IMG_FMT_32bppRGBA8888, colorGamut, UHDR_CT_SRGB, UHDR_CR_FULL_RANGE,
                                      (unsigned)sdrRaw.cols, (unsigned)sdrRaw.rows };
         sdr_img.planes[UHDR_PLANE_PACKED] = sdrRaw.data;
         sdr_img.stride[UHDR_PLANE_PACKED] = sdrRaw.cols; // Stride in pixels
 
-        uhdr_raw_image_t hdr_img = { UHDR_IMG_FMT_64bppRGBAHalfFloat, UHDR_CG_BT_709, UHDR_CT_LINEAR, UHDR_CR_FULL_RANGE,
+        uhdr_raw_image_t hdr_img = { UHDR_IMG_FMT_64bppRGBAHalfFloat, colorGamut, UHDR_CT_LINEAR, UHDR_CR_FULL_RANGE,
                                      (unsigned)hdrHalf.cols, (unsigned)hdrHalf.rows };
         hdr_img.planes[UHDR_PLANE_PACKED] = hdrHalf.data;
         hdr_img.stride[UHDR_PLANE_PACKED] = hdrHalf.cols;
@@ -334,6 +357,23 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
         checkUhdr(uhdr_enc_set_raw_image(enc, &hdr_img, UHDR_HDR_IMG), "Set HDR");
         checkUhdr(uhdr_enc_set_quality(enc, quality, UHDR_BASE_IMG), "Set Base Quality");
         checkUhdr(uhdr_enc_set_quality(enc, quality, UHDR_GAIN_MAP_IMG), "Set Gain Map Quality");
+
+        // The gain map is regenerated from the two planes, and by default for a
+        // 10000 nit display. A display applies the map weighted by
+        // log2(headroom)/log2(hdr_capacity_max), so leaving that default in place
+        // dims the highlights of an input mastered for a dimmer display. Ask for
+        // the gain map the input was written with instead.
+        checkUhdr(uhdr_enc_set_using_multi_channel_gainmap(enc, multiChannelGainmap), "Set Gain Map Channels");
+        if (hasGainmap) {
+            auto peak = std::clamp(gainmap.hdr_capacity_max * SDR_WHITE_NITS, MIN_PEAK_NITS, MAX_PEAK_NITS);
+            checkUhdr(uhdr_enc_set_target_display_peak_brightness(enc, peak), "Set Peak Brightness");
+            // The boosts are per channel, the encoder takes one range for all of
+            // them, so keep the widest.
+            checkUhdr(uhdr_enc_set_min_max_content_boost(enc,
+                          *std::min_element(gainmap.min_content_boost, gainmap.min_content_boost + 3),
+                          *std::max_element(gainmap.max_content_boost, gainmap.max_content_boost + 3)),
+                      "Set Content Boost");
+        }
 
         vector<uint8_t> exif_raw;
         if (!exif.empty()) {
@@ -368,6 +408,11 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
         try {
             Exiv2::Image::AutoPtr dst = Exiv2::ImageFactory::open(outputPath); dst->readMetadata();
             dst->setExifData(exif);
+            // Carry over the color space, as the pixels are left untouched
+            if (auto icc = getIcc(buffer); !icc.empty()) {
+                Exiv2::DataBuf profile(icc.data(), icc.size());
+                dst->setIccProfile(profile);
+            }
             dst->writeMetadata();
         } catch(...) {}
         if(verbose) clog << "Saved SDR: " << outputPath << endl;

@@ -85,3 +85,12 @@ Exiv2::ExifData getExif(const vector<char> &buf) {
     image->readMetadata();
     return image->exifData();
 }
+
+vector<uint8_t> getIcc(const vector<char> &buf) {
+    auto image = Exiv2::ImageFactory::open(reinterpret_cast<const Exiv2::byte*>(buf.data()), buf.size());
+    image->readMetadata();
+    if (!image->iccProfileDefined()) return {};
+
+    auto profile = image->iccProfile();
+    return {profile->pData_, profile->pData_ + profile->size_};
+}
