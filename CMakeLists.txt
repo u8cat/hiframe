@@ -34,6 +34,7 @@ find_package(Freetype REQUIRED)
 find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(EXIV2 REQUIRED exiv2)
+pkg_check_modules(RSVG REQUIRED librsvg-2.0)
 
 find_package(Boost 1.74 REQUIRED COMPONENTS program_options)
 
@@ -45,6 +46,7 @@ include_directories(
     ${OpenCV_INCLUDE_DIRS}
     ${FREETYPE_INCLUDE_DIRS}
     ${EXIV2_INCLUDE_DIRS}
+    ${RSVG_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIRS}
     ${ULTRAHDR_INCLUDE}
 )
@@ -57,6 +59,7 @@ target_link_libraries(hiframe
     ${OpenCV_LIBS}
     ${FREETYPE_LIBRARIES}
     ${EXIV2_LIBRARIES}
+    ${RSVG_LIBRARIES}
     ${Boost_LIBRARIES}
     ${ULTRAHDR_LIB}
     jpeg
@@ -64,7 +67,7 @@ target_link_libraries(hiframe
 
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/logo"
     DESTINATION "${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}"
-    FILES_MATCHING PATTERN "*.png")
+    FILES_MATCHING PATTERN "*.svg")
 
 install(TARGETS hiframe
     DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")

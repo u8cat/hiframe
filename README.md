@@ -13,6 +13,7 @@ This tool has been built and tested on Ubuntu 24.04.
 - [OpenCV 4](https://opencv.org/).
 - [FreeType 2](http://freetype.org/).
 - [Exiv 2](https://exiv2.org/).
+- [librsvg](https://gitlab.gnome.org/GNOME/librsvg) v2.52 or later, which draws the logos.
 - [Boost.ProgramOptions](https://www.boost.org/library/latest/program_options/) v1.74 or later.
 - libjpeg.
 - [libultrahdr](https://github.com/google/libultrahdr/) v2.0.1.
@@ -20,7 +21,7 @@ This tool has been built and tested on Ubuntu 24.04.
 Ubuntu users can install most prerequisites by running
 ```bash
 sudo apt install cmake pkg-config
-sudo apt install libopencv-dev libfreetype-dev libexiv2-dev libboost-program-options-dev libjpeg-dev
+sudo apt install libopencv-dev libfreetype-dev libexiv2-dev librsvg2-dev libboost-program-options-dev libjpeg-dev
 ```
 
 But libultrahdr must be built from source. To build libultrahdr, clone its repository by running

@@ -3,6 +3,13 @@
 #include <iterator>
 #include <string>
 #include <cstdint>
+#include <chrono>
+#include <optional>
+
+// Parse YYYY-MM-DDThh:mm:ss as a point in time in UTC, nothing if it is
+// malformed. Both the EXIF date of a photo and the timestamp of a logo file name
+// are written this way.
+std::optional<std::chrono::sys_seconds> parse_datetime(const std::string &datetime);
 
 // UTF-8 iterator
 class utf8_iterator {

@@ -1,4 +1,19 @@
+#include <cstdio>
+
 #include "string.hxx"
+
+std::optional<std::chrono::sys_seconds> parse_datetime(const std::string &datetime) {
+    using namespace std::chrono;
+
+    int y, mo, d, h, mi, s;
+    if (sscanf(datetime.c_str(), "%4d-%2d-%2dT%2d:%2d:%2d", &y, &mo, &d, &h, &mi, &s) != 6)
+        return {};
+
+    auto date = year{y}/month{unsigned(mo)}/day{unsigned(d)};
+    if (!date.ok()) return {};
+
+    return sys_days(date) + hours{h} + minutes{mi} + seconds{s};
+}
 
 char32_t utf8_iterator::operator*() const {
     if (m_it == m_end) return 0;

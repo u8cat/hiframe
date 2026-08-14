@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 16.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 width="128" height="101.1" viewBox="0 13.95 128 101.1" enable-background="new 0 0 128 128" xml:space="preserve">
+<g>
+	
+		<circle fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" cx="64" cy="71.5" r="34"/>
+	<path fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M119,30H92.261L87.6,20.397C86.158,17.429,82.278,15,78.979,15H49.021c-3.3,0-7.18,2.429-8.621,5.397L35.739,30H9
+		c-4.4,0-8,3.1-8,7.5v68c0,4.4,3.6,8.5,8,8.5h110c4.4,0,8-4.1,8-8.5v-68C127,33.1,123.4,30,119,30z"/>
+	
+		<line fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" x1="42" y1="19" x2="86" y2="19"/>
+	
+		<rect x="49" y="23" fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" width="30" height="4"/>
+	
+		<line fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" x1="104" y1="46" x2="104" y2="113"/>
+	
+		<line fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" x1="104" y1="31" x2="104" y2="38"/>
+	
+		<circle fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" cx="14" cy="42.5" r="5"/>
+	
+		<circle fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" cx="22" cy="50.5" r="2"/>
+	<path fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M1,107h33c1.1,0,2,0.4,2,1.5v5.5"/>
+	<path fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M87.946,55.137C91.135,59.795,93,65.43,93,71.5c0,16.016-12.983,29-29,29s-29-12.984-29-29s12.983-29,29-29
+		c6.303,0,12.137,2.012,16.895,5.426"/>
+	<path fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M76.09,64.436C77.304,66.51,78,68.924,78,71.5c0,7.732-6.268,14-14,14s-14-6.268-14-14s6.268-14,14-14
+		c2.578,0,4.994,0.697,7.069,1.913"/>
+	
+		<rect x="10" y="25" fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" width="20" height="5"/>
+	<path fill="none" stroke="#646464" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="
+		M119,28c0-1.104-0.896-2-2-2h-7c-1.104,0-2,0.896-2,2l0,0c0,1.104,0.896,2,2,2h7C118.104,30,119,29.104,119,28L119,28z"/>
+</g>
+</svg>

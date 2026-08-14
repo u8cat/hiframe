@@ -1,7 +1,9 @@
 #include <format>
 #include <cmath>
+#include <cstdio>
 
 #include "exif.hxx"
+#include "string.hxx"
 
 using namespace std::string_literals;
 using std::format, std::string, std::vector, Exiv2::ExifKey;
@@ -54,11 +56,19 @@ Metadata parseExif(const Exiv2::ExifData &exifData) {
             string d = key->toString();
             d[4] = '-'; d[7] = '-'; d[10]='T';
             meta.date = d;
+            string offset;
             if (auto key = exifData.findKey(ExifKey("Exif.Photo.OffsetTimeOriginal")); key != exifData.end()) {
-                auto s = key->toString();
-                if (s == "+00:00") meta.date += "Z";
-                else meta.date += s;
+                offset = key->toString();
+                if (offset == "+00:00") meta.date += "Z";
+                else meta.date += offset;
             }
+
+            // Move the date to UTC, so that it can be compared with the moment a
+            // logo took effect. An absent offset leaves it as it is, that is,
+            // takes the date to be in UTC already.
+            meta.taken = parse_datetime(d);
+            if (int h, m; meta.taken && sscanf(offset.c_str(), "%3d:%2d", &h, &m) == 2)
+                *meta.taken -= std::chrono::hours{h} + std::chrono::minutes{h < 0 ? -m : m};
         }
         if (auto key = exifData.findKey(ExifKey("Exif.GPSInfo.GPSLatitude")); key != exifData.end()) {
             // assume GPS data is complete

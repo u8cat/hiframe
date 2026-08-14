@@ -48,6 +48,9 @@
 
 #include <ultrahdr_api.h>
 
+#include <cairo.h>
+#include <librsvg/rsvg.h>
+
 #include "filesystem.hxx"
 #include "string.hxx"
 #include "text_renderer.hxx"
@@ -80,6 +83,106 @@ constexpr int LOGO_SPACING = 40;      // ... this far from the text on its left
 // and the range of the display peak brightness libultrahdr accepts.
 constexpr float SDR_WHITE_NITS = 203;
 constexpr float MIN_PEAK_NITS = 203, MAX_PEAK_NITS = 10000;
+
+// Effective time of a logo whose file name carries none. Photography is younger
+// than this, so such a logo applies to every photo.
+constexpr std::chrono::sys_seconds UNKNOWN_SINCE =
+    std::chrono::sys_days{std::chrono::year{1800}/std::chrono::January/1};
+
+// The logo of `make` in use at the moment a photo was taken. Logos are named
+// `<company>.YYYY-MM-DDThh:mm:ss.png`, the timestamp being when that logo took
+// effect, in UTC. A photo whose date is unknown gets the logo in use today. The
+// path is empty if the company is unknown, or if the photo is older than every
+// logo on record for it, as no logo at all beats one of the wrong era.
+fs::path findLogo(const fs::path &dir, string make, std::optional<std::chrono::sys_seconds> taken) {
+    std::transform(make.begin(), make.end(), make.begin(), tolower);
+
+    vector<std::pair<std::chrono::sys_seconds, fs::path>> logos; // of this company
+    for (const auto &entry : fs::directory_iterator(dir)) {
+        auto extension = entry.path().extension();
+        if (extension != ".svg" && extension != ".png") continue; // copyright.md, and such
+
+        auto stem = entry.path().stem().string();
+        auto dot = stem.find('.');
+        // An empty company would match every manufacturer, as in a name that
+        // begins with the separator
+        if (auto company = stem.substr(0, dot);
+            company.empty() || make.find(company) == string::npos)
+            continue;
+
+        auto since = dot == string::npos ? std::nullopt : parse_datetime(stem.substr(dot + 1));
+        if (dot != string::npos && !since)
+            cerr << "Logo " << entry.path().filename() << " has a malformed timestamp" << endl;
+        logos.emplace_back(since.value_or(UNKNOWN_SINCE), entry.path());
+    }
+    if (logos.empty()) return {};
+
+    std::sort(logos.begin(), logos.end()); // oldest logo first
+    if (!taken) return logos.back().second;
+
+    fs::path chosen; // stays empty while no logo has taken effect yet
+    for (const auto &[since, file] : logos) {
+        if (since > *taken) break;
+        chosen = file;
+    }
+    return chosen;
+}
+
+// Rasterize an SVG to fit inside a box of `boxW` by `boxH`, keeping the aspect
+// ratio of the drawing. The result is BGRA with straight alpha, as the rest of
+// the program expects, and empty if the file cannot be read or rendered.
+Mat renderSvg(const fs::path &file, int boxW, int boxH) {
+    GError *error = nullptr;
+    auto handle = rsvg_handle_new_from_file(file.c_str(), &error);
+    if (!handle) {
+        cerr << "Cannot read " << file.filename() << ": " << error->message << endl;
+        g_error_free(error);
+        return Mat();
+    }
+
+    // Fit the drawing into the box. A drawing sized in relative units has no
+    // size in pixels, in which case its viewBox gives the proportions, and a
+    // drawing with neither is stretched over the whole box.
+    double w, h;
+    if (!rsvg_handle_get_intrinsic_size_in_pixels(handle, &w, &h) || w <= 0 || h <= 0) {
+        gboolean has_width, has_height, has_viewbox;
+        RsvgLength width, height;
+        RsvgRectangle viewbox;
+        rsvg_handle_get_intrinsic_dimensions(handle, &has_width, &width, &has_height, &height,
+                                            &has_viewbox, &viewbox);
+        if (has_viewbox && viewbox.width > 0 && viewbox.height > 0)
+            w = viewbox.width, h = viewbox.height;
+        else
+            w = boxW, h = boxH;
+    }
+    auto ratio = std::min(boxW/w, boxH/h);
+    Mat logo(std::lround(h*ratio), std::lround(w*ratio), CV_8UC4, Scalar(0,0,0,0));
+
+    // Cairo draws ARGB32, which on a little endian machine is the BGRA of
+    // OpenCV, except that the color comes multiplied by the alpha.
+    auto surface = cairo_image_surface_create_for_data(logo.data, CAIRO_FORMAT_ARGB32,
+                                                      logo.cols, logo.rows, logo.step);
+    auto cr = cairo_create(surface);
+    RsvgRectangle viewport = {0, 0, (double)logo.cols, (double)logo.rows};
+    auto rendered = rsvg_handle_render_document(handle, cr, &viewport, &error);
+    cairo_surface_flush(surface);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+    g_object_unref(handle);
+
+    if (!rendered) {
+        cerr << "Cannot render " << file.filename() << ": " << error->message << endl;
+        g_error_free(error);
+        return Mat();
+    }
+
+    logo.forEach<cv::Vec4b>([](cv::Vec4b &pixel, const int*) {
+        if (pixel[3] != 0 && pixel[3] != 255)
+            for (int k = 0; k < 3; k++)
+                pixel[k] = cv::saturate_cast<uchar>(pixel[k] * 255 / pixel[3]);
+    });
+    return logo;
+}
 
 bool checkUhdr(uhdr_error_info_t status, const string& msg) {
     if (status.error_code != UHDR_CODEC_OK) {
@@ -239,38 +342,36 @@ bool process(const string &inputPath, const string &outputPath, int quality, int
 
     // Logos
     auto logoPath = get_executable_directory();
-    bool hasMakeLogo = false;
     if (fs::is_directory(logoPath / "../share/hiframe/logo")) logoPath /= "../share/hiframe/logo";
     else if (is_directory(logoPath / "logo")) logoPath /= "logo";
     else if (fs::is_directory(logoPath / "../logo")) logoPath /= "../logo";
     else cerr << "Unable to find logo images" << endl;
 
-    auto m = meta.make; std::transform(m.begin(), m.end(), m.begin(), tolower);
-    for (const auto &logo : fs::directory_iterator(logoPath)) {
-        auto p = logo.path();
-        if (p.filename() == "default.png") continue;
-        auto stem = p.stem().string();
-        if (m.find(stem) != string::npos) {
-            logoPath = p;
-            hasMakeLogo = true;
-            break;
-        }
-    }
-    if (!hasMakeLogo) {
+    auto logoFile = findLogo(logoPath, meta.make, meta.taken);
+    if (logoFile.empty()) {
         cerr << "Unknown manufacture: " << meta.make << "; fallback to default logo" << endl;
-        logoPath /= "default.png";
+        logoFile = logoPath / "default.svg";
+        if (!fs::exists(logoFile)) logoFile = logoPath / "default.png";
     }
+    if (verbose) clog << "Logo: " << logoFile.filename() << endl;
 
-    Mat logo = cv::imread(logoPath, cv::IMREAD_UNCHANGED);
+    int logoH = scaled(LOGO_HEIGHT), logoW = scaled(LOGO_WIDTH); // box the logo is fitted into
+
+    // A drawing is rasterized straight into the box, and so stays sharp at any
+    // font size, whereas a photograph of a logo has to be resampled.
+    Mat logo = logoFile.extension() == ".svg" ? renderSvg(logoFile, logoW, logoH)
+                                              : cv::imread(logoFile, cv::IMREAD_UNCHANGED);
     if (!logo.empty()) {
         if (logo.channels() < 4) cvtColor(logo, logo, logo.channels()==1 ? cv::COLOR_GRAY2BGRA : cv::COLOR_BGR2BGRA);
 
-        auto logosize = logo.size();
-        int logoH = scaled(LOGO_HEIGHT), logoW = scaled(LOGO_WIDTH); // box the logo is fitted into
-        double logoresize_ratio = std::min((double)logoH/logosize.height, (double)logoW/logosize.width);
-        int hsize = std::round(logosize.width*logoresize_ratio);
-        int vsize = std::round(logosize.height*logoresize_ratio);
-        resize(logo, logo, cv::Size(hsize,vsize), 0, 0, cv::INTER_AREA);
+        if (logoFile.extension() != ".svg") {
+            auto logosize = logo.size();
+            double logoresize_ratio = std::min((double)logoH/logosize.height, (double)logoW/logosize.width);
+            resize(logo, logo, cv::Size(std::round(logosize.width*logoresize_ratio),
+                                        std::round(logosize.height*logoresize_ratio)), 0, 0, cv::INTER_AREA);
+        }
+
+        int hsize = logo.cols, vsize = logo.rows;
         int lx = targetW - margin - hsize;
         int ly = footerY + (logoH-vsize)/2;
 
